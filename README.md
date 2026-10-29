@@ -173,3 +173,32 @@ connected Read the Docs project.
 
 This project is licensed under the **GNU General Public License v3.0**. See
 [`LICENSE`](LICENSE) for details.
+
+---
+
+# CNIT 481 Docker Compose Lab
+
+## Overview
+
+This implementation deploys the Docsy documentation website
+using Docker compose
+
+The deployment separates documentation generation from
+web serving and provides optional development and
+observability services
+
+## Prerequisites
+
+- Docker Engine
+- Docker Compose v2.24.4 or newer
+- Git
+- Make
+
+## Initial Setup
+
+Clone this repository and navigate to its root
+
+Create a local environment configuration
+
+```bash
+cp .env.example .env

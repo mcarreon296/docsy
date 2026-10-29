@@ -1,0 +1,10 @@
+services:
+  web:
+    ports: !override
+      - "${OVERRIDE_DOCS_PORT:-8081}:80"
+
+    volumes:
+      - weblogs:/var/log/nginx
+
+volumes:
+  weblogs:

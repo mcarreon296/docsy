@@ -1,0 +1,181 @@
+services:
+
+  # Sphinx Builder
+  builder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    image: docsy-builder:latest
+
+    working_dir: /work
+
+    environment:
+      PROJECT_NAME: ${PROJECT_NAME:-Docsy}
+      SPHINX_THEME: ${SPHINX_THEME:-sphinx_rtd_theme}
+
+    volumes:
+      - .:/work:ro
+      - site:/site
+
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        sphinx-build -b html -d /tmp/doctrees docs/source /site
+        test -s /site/index.html
+        echo "Sphinx documentation build completed."
+        exec sleep infinity
+
+    healthcheck:
+      test: ["CMD", "test", "-f", "/site/index.html"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 60s
+
+    networks:
+      - docs
+
+  # Nginx Web Server
+  web:
+    image: nginx:1.27-alpine
+
+    depends_on:
+      builder:
+        condition: service_healthy
+
+    ports:
+      - "${DOCS_PORT:-8080}:80"
+
+    volumes:
+      - site:/site:ro
+      - ops:/var/cache/nginx
+      - ./ops/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- http://127.0.0.1/ >/dev/null 2>&1 || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+    restart: unless-stopped
+
+    networks:
+      - docs
+
+  # Development Profile
+  dev:
+    image: docsy-builder:latest
+
+    pull_policy: never
+
+    profiles:
+      - dev
+
+    depends_on:
+      builder:
+        condition: service_healthy
+
+    working_dir: /work
+
+    environment:
+      BUILD_DIR: /site
+      PROJECT_NAME: ${PROJECT_NAME:-Docsy}
+      SPHINX_THEME: ${SPHINX_THEME:-sphinx_rtd_theme}
+
+    command:
+      - sh
+      - -c
+      - |
+        exec sphinx-autobuild --host 0.0.0.0 --port 8000 -d /tmp/dev-doctrees docs/source "$${BUILD_DIR}"
+
+    volumes:
+      - .:/work:ro
+      - site:/site
+
+    ports:
+      - "8000:8000"
+
+    networks:
+      - docs
+
+  # Production Profile Smoke Test
+  prod-check:
+    image: busybox:1.36
+
+    profiles:
+      - prod
+
+    depends_on:
+      web:
+        condition: service_healthy
+
+    command:
+      - sh
+      - -c
+      - |
+        wget -qO- http://web/ >/dev/null
+        echo "Production HTTP smoke test passed."
+
+    networks:
+      - docs
+
+  # Observability: Dozzle
+  dozzle:
+    image: amir20/dozzle:v10.10.0
+
+    profiles:
+      - obs
+
+    ports:
+      - "127.0.0.1:9000:8080"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    depends_on:
+      web:
+        condition: service_started
+
+    networks:
+      - docs
+
+  # Observability: cAdvisor
+  cadvisor:
+    image: ghcr.io/google/cadvisor:v0.60.5
+
+    profiles:
+      - obs
+
+    privileged: true
+
+    devices:
+      - /dev/kmsg:/dev/kmsg
+
+    ports:
+      - "127.0.0.1:9100:8080"
+
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+
+    networks:
+      - docs
+
+# Persistent Volumes
+volumes:
+  site:
+  ops:
+
+# Application Network
+networks:
+  docs:
+    driver: bridge
